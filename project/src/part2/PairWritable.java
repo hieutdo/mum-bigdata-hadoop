@@ -1,6 +1,5 @@
 package part2;
 
-import org.apache.hadoop.io.Text;
 import org.apache.hadoop.io.WritableComparable;
 
 import java.io.DataInput;
@@ -8,29 +7,37 @@ import java.io.DataOutput;
 import java.io.IOException;
 
 public class PairWritable implements WritableComparable<PairWritable> {
-    private Text w;
-    private Text u;
+    private String term;
+    private String neighbor;
 
     public PairWritable() {
-        this.w = new Text();
-        this.u = new Text();
+        this.term = "";
+        this.neighbor = "";
     }
 
-    public PairWritable(Text w, Text u) {
-        this.w = w;
-        this.u = u;
+    public PairWritable(String term, String neighbor) {
+        this.term = term;
+        this.neighbor = neighbor;
+    }
+
+    public String getTerm() {
+        return term;
+    }
+
+    public String getNeighbor() {
+        return neighbor;
     }
 
     @Override
     public void write(DataOutput dataOutput) throws IOException {
-        this.w.write(dataOutput);
-        this.u.write(dataOutput);
+        dataOutput.writeUTF(this.term);
+        dataOutput.writeUTF(this.neighbor);
     }
 
     @Override
     public void readFields(DataInput dataInput) throws IOException {
-        this.w.readFields(dataInput);
-        this.u.readFields(dataInput);
+        this.term = dataInput.readUTF();
+        this.neighbor = dataInput.readUTF();
     }
 
     @Override
@@ -40,25 +47,25 @@ public class PairWritable implements WritableComparable<PairWritable> {
 
         PairWritable that = (PairWritable) o;
 
-        if (w != null ? !w.equals(that.w) : that.w != null) return false;
-        return u != null ? u.equals(that.u) : that.u == null;
+        if (term != null ? !term.equals(that.term) : that.term != null) return false;
+        return neighbor != null ? neighbor.equals(that.neighbor) : that.neighbor == null;
     }
 
     @Override
     public int hashCode() {
-        int result = w != null ? w.hashCode() : 0;
-        result = 31 * result + (u != null ? u.hashCode() : 0);
+        int result = term != null ? term.hashCode() : 0;
+        result = 31 * result + (neighbor != null ? neighbor.hashCode() : 0);
         return result;
     }
 
     @Override
     public String toString() {
-        return "(" + w + ", " + u + ")";
+        return "(" + term + ", " + neighbor + ")";
     }
 
     @Override
     public int compareTo(PairWritable o) {
-        int result = w.compareTo(o.w);
-        return result == 0 ? u.compareTo(o.u) : result;
+        int result = term.compareTo(o.term);
+        return result == 0 ? neighbor.compareTo(o.neighbor) : result;
     }
 }
