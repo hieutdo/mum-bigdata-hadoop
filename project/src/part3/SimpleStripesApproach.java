@@ -6,6 +6,7 @@ import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.*;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.Mapper;
+import org.apache.hadoop.mapreduce.Partitioner;
 import org.apache.hadoop.mapreduce.Reducer;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
@@ -13,58 +14,90 @@ import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
 
 import java.io.IOException;
+import java.text.DecimalFormat;
 
 public class SimpleStripesApproach {
     public static class Map extends Mapper<LongWritable, Text, Text, MapWritable> {
+
         @Override
         public void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
             String[] terms = value.toString().split("\\s+");
 
             for (int i = 0; i < terms.length - 1; i++) {
+                String term = terms[i];
                 MapWritable H = new MapWritable();
 
                 for (int j = i + 1; j < terms.length; j++) {
-                    if (terms[j].equals(terms[i])) {
+                    String neighbor = terms[j];
+
+                    if (neighbor.equals(term)) {
                         break;
                     }
 
-                    Text neighbor = new Text(terms[j]);
+                    Text neighborKey = new Text(neighbor);
 
-                    if (H.containsKey(neighbor)) {
-                        IntWritable count = (IntWritable) H.get(neighbor);
+                    if (H.containsKey(neighborKey)) {
+                        IntWritable count = (IntWritable) H.get(neighborKey);
                         count.set(count.get() + 1);
                     } else {
-                        H.put(neighbor, new IntWritable(1));
+                        H.put(neighborKey, new IntWritable(1));
                     }
                 }
 
                 if (!H.isEmpty()) {
-                    context.write(new Text(terms[i]), H);
+                    context.write(new Text(term), H);
                 }
             }
         }
     }
 
     public static class Reduce extends Reducer<Text, MapWritable, Text, MapWritable> {
-        @Override
-        public void reduce(Text key, Iterable<MapWritable> values, Context context) throws IOException, InterruptedException {
-            MapWritable Hf = new MapWritable();
+        private DecimalFormat decimalFormat = new DecimalFormat("##.###");
 
-            for (MapWritable H : values) {
-                for (Writable neighbor : H.keySet()) {
-                    if (Hf.containsKey(neighbor)) {
-                        IntWritable totalCount = (IntWritable) Hf.get(neighbor);
-                        IntWritable neighborCount = (IntWritable) H.get(neighbor);
-                        totalCount.set(totalCount.get() + neighborCount.get());
+        private double formatDouble(double num) {
+            return Double.parseDouble(decimalFormat.format(num));
+        }
+
+        @Override
+        public void reduce(Text term, Iterable<MapWritable> stripes, Context context) throws IOException, InterruptedException {
+            MapWritable Hf = new MapWritable();
+            int marginal = 0;
+
+            for (MapWritable stripe : stripes) {
+                for (Writable neighbor : stripe.keySet()) {
+                    IntWritable neighborCount = (IntWritable) stripe.get(neighbor);
+                    DoubleWritable totalCount = (DoubleWritable) Hf.get(neighbor);
+
+                    if (totalCount == null) {
+                        totalCount = new DoubleWritable(neighborCount.get());
                     } else {
-                        Hf.put(neighbor, H.get(neighbor));
+                        totalCount.set(totalCount.get() + neighborCount.get());
                     }
+
+                    marginal += neighborCount.get();
+
+                    Hf.put(neighbor, totalCount);
                 }
             }
 
-            context.write(key, Hf);
+            for (Writable neighbor : Hf.keySet()) {
+                DoubleWritable count = (DoubleWritable) Hf.get(neighbor);
+                count.set(formatDouble(count.get() / marginal));
+            }
+
+            context.write(term, Hf);
         }
     }
+
+    public static class Partition extends Partitioner<Text, MapWritable> {
+
+        @Override
+        public int getPartition(Text term, MapWritable map, int numReduceTasks) {
+            char firstChar = term.toString().toUpperCase().charAt(0);
+            return (firstChar < 'C') ? 0 : 1;
+        }
+    }
+
 
     public static void main(String[] args) throws Exception {
         Configuration conf = new Configuration();
@@ -84,6 +117,7 @@ public class SimpleStripesApproach {
 
         job.setMapperClass(Map.class);
         job.setReducerClass(Reduce.class);
+        job.setPartitionerClass(Partition.class);
 
         job.setMapOutputKeyClass(Text.class);
         job.setMapOutputValueClass(MapWritable.class);
@@ -93,6 +127,8 @@ public class SimpleStripesApproach {
 
         job.setInputFormatClass(TextInputFormat.class);
         job.setOutputFormatClass(TextOutputFormat.class);
+
+        job.setNumReduceTasks(2);
 
         FileInputFormat.addInputPath(job, inputDir);
         FileOutputFormat.setOutputPath(job, outputDir);
