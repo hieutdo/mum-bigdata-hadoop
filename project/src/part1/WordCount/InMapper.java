@@ -8,18 +8,26 @@ import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Job;
 import org.apache.hadoop.mapreduce.Mapper;
-import org.apache.hadoop.mapreduce.Reducer;
 import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
 
 import java.io.IOException;
+import java.util.HashMap;
+import java.util.Map.Entry;
 import java.util.StringTokenizer;
 
-public class SimpleWordCount {
+public class InMapper {
 
     public static class Map extends Mapper<LongWritable, Text, Text, IntWritable> {
+        private HashMap<String, Integer> H;
+
+        @Override
+        protected void setup(Context context) throws IOException, InterruptedException {
+            H = new HashMap<>();
+        }
+
         @Override
         public void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
             String line = value.toString();
@@ -27,19 +35,19 @@ public class SimpleWordCount {
 
             while (tokenizer.hasMoreTokens()) {
                 String token = tokenizer.nextToken();
-                context.write(new Text(token), new IntWritable(1));
+                if (H.containsKey(token)) {
+                    H.put(token, H.get(token) + 1);
+                } else {
+                    H.put(token, 1);
+                }
             }
         }
-    }
 
-    public static class Reduce extends Reducer<Text, IntWritable, Text, IntWritable> {
         @Override
-        public void reduce(Text key, Iterable<IntWritable> values, Context context) throws IOException, InterruptedException {
-            int sum = 0;
-            for (IntWritable val : values) {
-                sum += val.get();
+        protected void cleanup(Context context) throws IOException, InterruptedException {
+            for (Entry<String, Integer> pair : H.entrySet()) {
+                context.write(new Text(pair.getKey()), new IntWritable(pair.getValue()));
             }
-            context.write(key, new IntWritable(sum));
         }
     }
 
@@ -55,15 +63,15 @@ public class SimpleWordCount {
             hdfs.delete(outputDir, true);
         }
 
-        Job job = Job.getInstance(conf, "SimpleWordCount");
+        Job job = Job.getInstance(conf, "InMapperWordCount");
 
-        job.setJarByClass(SimpleWordCount.class);
+        job.setJarByClass(InMapper.class);
 
         job.setOutputKeyClass(Text.class);
         job.setOutputValueClass(IntWritable.class);
 
         job.setMapperClass(Map.class);
-        job.setReducerClass(Reduce.class);
+        job.setReducerClass(Simple.Reduce.class);
 
         job.setInputFormatClass(TextInputFormat.class);
         job.setOutputFormatClass(TextOutputFormat.class);

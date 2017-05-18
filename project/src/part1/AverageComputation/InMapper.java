@@ -1,10 +1,10 @@
 package part1.AverageComputation;
 
+import common.SumCount;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.io.DoubleWritable;
-import org.apache.hadoop.io.IntWritable;
 import org.apache.hadoop.io.LongWritable;
 import org.apache.hadoop.io.Text;
 import org.apache.hadoop.mapreduce.Job;
@@ -20,10 +20,10 @@ import java.util.HashMap;
 import java.util.Map.Entry;
 import java.util.regex.Matcher;
 
-public class InMapperAverageComputation {
+public class InMapper {
 
-    public static class Map extends Mapper<LongWritable, Text, Text, SumCountWritable> {
-        private HashMap<String, SumCountWritable> H;
+    public static class Map extends Mapper<LongWritable, Text, Text, SumCount> {
+        private HashMap<String, SumCount> H;
 
         @Override
         protected void setup(Context context) throws IOException, InterruptedException {
@@ -32,37 +32,39 @@ public class InMapperAverageComputation {
 
         public void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
             String line = value.toString();
-            Matcher matcher = SimpleAverageComputation.pattern.matcher(line);
+            Matcher matcher = Simple.pattern.matcher(line);
 
             if (matcher.find()) {
                 String ip = matcher.group(1);
-                int bytes = Integer.parseInt(matcher.group(3), 10);
-                SumCountWritable sumCount = H.get(ip);
+                int bytes = matcher.group(3).equals("-")
+                        ? 0
+                        : Integer.parseInt(matcher.group(3), 10);
+                SumCount sumCount = H.get(ip);
 
                 if (sumCount == null) {
-                    H.put(ip, new SumCountWritable(new LongWritable(bytes), new IntWritable(1)));
+                    H.put(ip, new SumCount(bytes, 1));
                 } else {
-                    sumCount.getSum().set(sumCount.getSum().get() + bytes);
-                    sumCount.getCount().set(sumCount.getCount().get() + 1);
+                    sumCount.setSum(sumCount.getSum() + bytes);
+                    sumCount.setCount(sumCount.getCount() + 1);
                 }
             }
         }
 
         @Override
         protected void cleanup(Context context) throws IOException, InterruptedException {
-            for (Entry<String, SumCountWritable> entry : H.entrySet()) {
+            for (Entry<String, SumCount> entry : H.entrySet()) {
                 context.write(new Text(entry.getKey()), entry.getValue());
             }
         }
     }
 
-    public static class Reduce extends Reducer<Text, SumCountWritable, Text, DoubleWritable> {
-        public void reduce(Text key, Iterable<SumCountWritable> values, Context context) throws IOException, InterruptedException {
+    public static class Reduce extends Reducer<Text, SumCount, Text, DoubleWritable> {
+        public void reduce(Text key, Iterable<SumCount> values, Context context) throws IOException, InterruptedException {
             long sum = 0;
             int count = 0;
-            for (SumCountWritable val : values) {
-                sum += val.getSum().get();
-                count += val.getCount().get();
+            for (SumCount val : values) {
+                sum += val.getSum();
+                count += val.getCount();
             }
             context.write(key, new DoubleWritable(sum / count));
         }
@@ -82,13 +84,13 @@ public class InMapperAverageComputation {
 
         Job job = Job.getInstance(conf, "InMapperAverageComputation");
 
-        job.setJarByClass(InMapperAverageComputation.class);
+        job.setJarByClass(InMapper.class);
 
         job.setMapperClass(Map.class);
         job.setReducerClass(Reduce.class);
 
         job.setMapOutputKeyClass(Text.class);
-        job.setMapOutputValueClass(SumCountWritable.class);
+        job.setMapOutputValueClass(SumCount.class);
 
         job.setOutputKeyClass(Text.class);
         job.setOutputValueClass(DoubleWritable.class);

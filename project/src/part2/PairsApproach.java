@@ -1,5 +1,6 @@
 package part2;
 
+import common.Pair;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
@@ -17,13 +18,14 @@ import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
 
 import java.io.IOException;
-import java.text.DecimalFormat;
 
-public class SimplePairsApproach {
+import static common.Utils.formatDouble;
+
+public class PairsApproach {
     private static final String STAR = "*";
     private static final IntWritable one = new IntWritable(1);
 
-    public static class Map extends Mapper<LongWritable, Text, PairWritable, IntWritable> {
+    public static class Map extends Mapper<LongWritable, Text, Pair, IntWritable> {
 
         @Override
         public void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
@@ -39,42 +41,38 @@ public class SimplePairsApproach {
                         break;
                     }
 
-                    context.write(new PairWritable(term, neighbor), one);
-                    context.write(new PairWritable(term, STAR), one);
+                    context.write(new Pair(term, neighbor), one);
+                    context.write(new Pair(term, STAR), one);
                 }
             }
         }
     }
 
-    public static class Reduce extends Reducer<PairWritable, IntWritable, PairWritable, DoubleWritable> {
-        private DecimalFormat decimalFormat = new DecimalFormat("##.###");
-        private int marginal = 0;
-
-        private double formatDouble(double num) {
-            return Double.parseDouble(decimalFormat.format(num));
-        }
+    public static class Reduce extends Reducer<Pair, IntWritable, Pair, DoubleWritable> {
+        private int totalSum = 0;
 
         @Override
-        public void reduce(PairWritable pair, Iterable<IntWritable> counts, Context context) throws IOException, InterruptedException {
+        public void reduce(Pair pair, Iterable<IntWritable> counts, Context context) throws IOException, InterruptedException {
             int sum = 0;
+
             for (IntWritable count : counts) {
                 sum += count.get();
             }
 
-            if (STAR.equals(pair.getNeighbor())) {
-                marginal = sum;
+            if (STAR.equals(pair.getRight())) {
+                totalSum = sum;
             } else {
-                double average = formatDouble((double) sum / marginal);
+                double average = formatDouble((double) sum / totalSum);
                 context.write(pair, new DoubleWritable(average));
             }
         }
     }
 
-    public static class Partition extends Partitioner<PairWritable, IntWritable> {
+    public static class Partition extends Partitioner<Pair, IntWritable> {
 
         @Override
-        public int getPartition(PairWritable pair, IntWritable count, int numReduceTasks) {
-            char firstChar = pair.getTerm().toUpperCase().charAt(0);
+        public int getPartition(Pair pair, IntWritable count, int numReduceTasks) {
+            char firstChar = pair.getLeft().toUpperCase().charAt(0);
             return (firstChar < 'C') ? 0 : 1;
         }
     }
@@ -91,18 +89,18 @@ public class SimplePairsApproach {
             hdfs.delete(outputDir, true);
         }
 
-        Job job = Job.getInstance(conf, "SimplePairsApproach");
+        Job job = Job.getInstance(conf, "PairsApproach");
 
-        job.setJarByClass(SimplePairsApproach.class);
+        job.setJarByClass(PairsApproach.class);
 
         job.setMapperClass(Map.class);
         job.setReducerClass(Reduce.class);
         job.setPartitionerClass(Partition.class);
 
-        job.setMapOutputKeyClass(PairWritable.class);
+        job.setMapOutputKeyClass(Pair.class);
         job.setMapOutputValueClass(IntWritable.class);
 
-        job.setOutputKeyClass(PairWritable.class);
+        job.setOutputKeyClass(Pair.class);
         job.setOutputValueClass(DoubleWritable.class);
 
         job.setInputFormatClass(TextInputFormat.class);

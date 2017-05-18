@@ -11,16 +11,17 @@ import org.apache.hadoop.mapreduce.lib.input.FileInputFormat;
 import org.apache.hadoop.mapreduce.lib.input.TextInputFormat;
 import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
-import part2.PairWritable;
-import part2.SimplePairsApproach;
+import common.Pair;
+import part2.PairsApproach;
 
 import java.io.IOException;
-import java.text.DecimalFormat;
+
+import static common.Utils.formatDouble;
 
 public class HybridApproach {
     private static final IntWritable one = new IntWritable(1);
 
-    public static class Map extends Mapper<LongWritable, Text, PairWritable, IntWritable> {
+    public static class Map extends Mapper<LongWritable, Text, Pair, IntWritable> {
 
         @Override
         public void map(LongWritable key, Text value, Context context) throws IOException, InterruptedException {
@@ -36,20 +37,15 @@ public class HybridApproach {
                         break;
                     }
 
-                    context.write(new PairWritable(term, neighbor), one);
+                    context.write(new Pair(term, neighbor), one);
                 }
             }
         }
     }
 
-    public static class Reduce extends Reducer<PairWritable, IntWritable, Text, MapWritable> {
-        private DecimalFormat decimalFormat = new DecimalFormat("##.###");
-        private String tPrev;
+    public static class Reduce extends Reducer<Pair, IntWritable, Text, MapWritable> {
         private MapWritable H;
-
-        private double formatDouble(double num) {
-            return Double.parseDouble(decimalFormat.format(num));
-        }
+        private String tPrev;
 
         private void emit(Context context) throws IOException, InterruptedException {
             double total = 0;
@@ -69,13 +65,13 @@ public class HybridApproach {
 
         @Override
         protected void setup(Context context) throws IOException, InterruptedException {
-            tPrev = null;
             H = new MapWritable();
+            tPrev = null;
         }
 
         @Override
-        public void reduce(PairWritable pair, Iterable<IntWritable> counts, Context context) throws IOException, InterruptedException {
-            String t = pair.getTerm();
+        public void reduce(Pair pair, Iterable<IntWritable> counts, Context context) throws IOException, InterruptedException {
+            String t = pair.getLeft();
 
             if (!t.equals(tPrev) && tPrev != null) {
                 emit(context);
@@ -87,7 +83,7 @@ public class HybridApproach {
                 sum += count.get();
             }
 
-            H.put(new Text(pair.getNeighbor()), new DoubleWritable(sum));
+            H.put(new Text(pair.getRight()), new DoubleWritable(sum));
             tPrev = t;
         }
 
@@ -115,9 +111,9 @@ public class HybridApproach {
 
         job.setMapperClass(Map.class);
         job.setReducerClass(Reduce.class);
-        job.setPartitionerClass(SimplePairsApproach.Partition.class);
+        job.setPartitionerClass(PairsApproach.Partition.class);
 
-        job.setMapOutputKeyClass(PairWritable.class);
+        job.setMapOutputKeyClass(Pair.class);
         job.setMapOutputValueClass(IntWritable.class);
 
         job.setOutputKeyClass(Text.class);

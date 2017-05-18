@@ -14,9 +14,10 @@ import org.apache.hadoop.mapreduce.lib.output.FileOutputFormat;
 import org.apache.hadoop.mapreduce.lib.output.TextOutputFormat;
 
 import java.io.IOException;
-import java.text.DecimalFormat;
 
-public class SimpleStripesApproach {
+import static common.Utils.formatDouble;
+
+public class StripesApproach {
     public static class Map extends Mapper<LongWritable, Text, Text, MapWritable> {
 
         @Override
@@ -52,16 +53,11 @@ public class SimpleStripesApproach {
     }
 
     public static class Reduce extends Reducer<Text, MapWritable, Text, MapWritable> {
-        private DecimalFormat decimalFormat = new DecimalFormat("##.###");
-
-        private double formatDouble(double num) {
-            return Double.parseDouble(decimalFormat.format(num));
-        }
 
         @Override
         public void reduce(Text term, Iterable<MapWritable> stripes, Context context) throws IOException, InterruptedException {
             MapWritable Hf = new MapWritable();
-            int marginal = 0;
+            int sum = 0;
 
             for (MapWritable stripe : stripes) {
                 for (Writable neighbor : stripe.keySet()) {
@@ -74,7 +70,7 @@ public class SimpleStripesApproach {
                         totalCount.set(totalCount.get() + neighborCount.get());
                     }
 
-                    marginal += neighborCount.get();
+                    sum += neighborCount.get();
 
                     Hf.put(neighbor, totalCount);
                 }
@@ -82,7 +78,7 @@ public class SimpleStripesApproach {
 
             for (Writable neighbor : Hf.keySet()) {
                 DoubleWritable count = (DoubleWritable) Hf.get(neighbor);
-                count.set(formatDouble(count.get() / marginal));
+                count.set(formatDouble(count.get() / sum));
             }
 
             context.write(term, Hf);
@@ -111,9 +107,9 @@ public class SimpleStripesApproach {
             hdfs.delete(outputDir, true);
         }
 
-        Job job = Job.getInstance(conf, "SimpleStripesApproach");
+        Job job = Job.getInstance(conf, "StripesApproach");
 
-        job.setJarByClass(SimpleStripesApproach.class);
+        job.setJarByClass(StripesApproach.class);
 
         job.setMapperClass(Map.class);
         job.setReducerClass(Reduce.class);
